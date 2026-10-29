@@ -3,7 +3,7 @@
 ```text
 ImageNet-pretrained MobileNetV3-Small
               ↓
-  Freeze the convolutional feature extractor
+  Freeze or fine-tune the convolutional feature extractor
               ↓
 Replace the 1,000-class output layer with a 101-class layer
               ↓
@@ -24,7 +24,38 @@ The first run automatically downloads the Food-101 dataset and the ImageNet-pret
 python main.py --mode all --epochs 10 --batch-size 32
 ```
 
-The convolutional feature extractor is frozen, while the entire classification head is trained.
+By default (`--strategy frozen`), the convolutional feature extractor is frozen,
+while the entire classification head is trained.
+
+## Training Strategies
+
+| Strategy | Parameters updated | Backbone BatchNorm during training |
+| --- | --- | --- |
+| `frozen` (default) | Entire classification head | Evaluation mode; running statistics stay fixed |
+| `full` | Backbone and entire classification head | Training mode; running statistics are updated |
+
+The optimizer includes only parameters with `requires_grad=True` for either
+strategy. During evaluation and Grad-CAM, the entire model uses evaluation mode
+regardless of the strategy. Existing weight checkpoints remain compatible.
+
+For comparison experiments, keep the data split and other settings the same
+and use separate output directories for each strategy:
+
+```bash
+python main.py --mode all --strategy frozen --epochs 10 --batch-size 32 --output-dir outputs/frozen
+python main.py --mode all --strategy full --epochs 10 --batch-size 32 --output-dir outputs/full
+```
+
+Each directory stores its own best validation checkpoint and test results. To
+evaluate a saved model, select the corresponding directory:
+
+```bash
+python main.py --mode evaluate --strategy full --output-dir outputs/full
+```
+
+The selected strategy is recorded in `metrics.json` under `args.strategy` for
+the current invocation. For an existing checkpoint, this argument does not
+establish which strategy was used in its original training run.
 
 ## Training, Validation, and Test Data
 

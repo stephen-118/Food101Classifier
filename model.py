@@ -4,8 +4,9 @@ from torchvision.models import MobileNet_V3_Small_Weights, mobilenet_v3_small
 # MobileNetV3-Small transfer-learning model for Food-101
 class FoodTransferModel(nn.Module):
 
-    def __init__(self, num_classes=101, use_pretrained=True): # Use pretrained weights by default.
+    def __init__(self, num_classes=101, use_pretrained=True, freeze_backbone=True):
         super().__init__()
+        self.freeze_backbone = freeze_backbone
         # Load MobileNet with pretrained visual features.
         if use_pretrained:
             weights = MobileNet_V3_Small_Weights.DEFAULT
@@ -13,10 +14,9 @@ class FoodTransferModel(nn.Module):
             weights = None
         self.network = mobilenet_v3_small(weights=weights)
 
-        # Preserve the ImageNet feature extractor and train only the classification head.
+        # Freeze the feature extractor or fine-tune it along with the classification head.
         for parameter in self.network.features.parameters():
-            # Disable gradient computation and parameter updates.
-            parameter.requires_grad = False
+            parameter.requires_grad = not freeze_backbone
 
         # Get the number of input features for the output layer.
         input_features = self.network.classifier[3].in_features
@@ -34,6 +34,7 @@ class FoodTransferModel(nn.Module):
     # Keep the frozen pretrained feature extractor stable while training the classifier.
     def train(self, mode=True):
         super().train(mode)
-        # Keep BatchNorm running statistics fixed and use the stored mean and variance.
-        self.network.features.eval()
+        # Frozen features keep fixed BatchNorm statistics; full fine-tuning updates them.
+        if self.freeze_backbone:
+            self.network.features.eval()
         return self

@@ -97,26 +97,31 @@ class EvaluationProtocolTests(unittest.TestCase):
             for count in (3, 5):
                 loader = DataLoader(Subset(dataset, list(range(count))), batch_size=2)
                 args = argparse.Namespace(mode="evaluate", data_dir="unused", output_dir=folder,
+                                          strategy="frozen" if count == 3 else "full",
                                           epochs=10, batch_size=2, learning_rate=0.001,
                                           workers=0, max_train_samples=None,
                                           max_test_samples=3 if count == 3 else None, gradcam_count=6)
-                argv = ["main.py", "--mode", "evaluate", "--output-dir", folder]
+                argv = ["main.py", "--mode", "evaluate", "--strategy", args.strategy,
+                        "--output-dir", folder]
                 if count == 3:
                     argv += ["--max-test-samples", "3"]
                 with patch.object(cli, "parse_args", return_value=args), \
                      patch.object(cli, "create_loaders", return_value=(loader, loader, loader, list("abcde"))), \
-                     patch.object(cli, "FoodTransferModel", return_value=model), \
+                     patch.object(cli, "FoodTransferModel", return_value=model) as model_factory, \
                      patch.object(cli, "plot_confusion_matrix"), \
                      patch.object(cli.torch.cuda, "is_available", return_value=False), \
                      patch.object(cli.sys, "argv", argv), \
                      contextlib.redirect_stdout(io.StringIO()):
                     cli.main()
+                model_factory.assert_called_once_with(
+                    num_classes=5, use_pretrained=False, freeze_backbone=args.strategy == "frozen")
                 metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
                 self.assertEqual(metrics["test_samples"], count)
                 self.assertEqual(metrics["official_test_samples"], 5)
                 self.assertEqual(metrics["is_full_test_set"], count == 5)
                 self.assertEqual(metrics["command"][1:], argv)
                 self.assertEqual(metrics["args"]["max_test_samples"], args.max_test_samples)
+                self.assertEqual(metrics["args"]["strategy"], args.strategy)
                 self.assertEqual(metrics["checkpoint_path"], str(checkpoint.resolve()))
                 self.assertTrue(metrics["evaluated_at"].endswith("+00:00"))
             backups = list(Path(folder).glob("metrics.backup-*.json"))

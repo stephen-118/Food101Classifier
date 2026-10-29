@@ -18,6 +18,8 @@ def parse_args():
     # Define command-line arguments.
     parser = argparse.ArgumentParser(description="Food-101 transfer learning with MobileNetV3-Small")
     parser.add_argument("--mode", choices=["train", "evaluate", "gradcam", "all"], default="all")
+    parser.add_argument("--strategy", choices=["frozen", "full"], default="frozen",
+                        help="frozen: train the classification head only; full: fine-tune all layers")
     parser.add_argument("--data-dir", default="data")
     parser.add_argument("--output-dir", default="outputs")
     parser.add_argument("--epochs", type=int, default=10)
@@ -54,13 +56,17 @@ def main():
 
     use_pretrained = args.mode in ("train", "all")
     # Create the model.
-    model = FoodTransferModel(num_classes=len(classes),
-                              use_pretrained=use_pretrained).to(device)
+    model = FoodTransferModel(
+        num_classes=len(classes),
+        use_pretrained=use_pretrained,
+        freeze_backbone=args.strategy == "frozen",
+    ).to(device)
     # Define the loss function.
     criterion = nn.CrossEntropyLoss()
 
     # Train the model.
     if args.mode in ("train", "all"):
+        print(f"Training strategy: {args.strategy}")
         # Pass only trainable parameters to the optimizer.
         trainable_parameters = filter(
             lambda parameter: parameter.requires_grad,
