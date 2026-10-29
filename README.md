@@ -24,8 +24,7 @@ The first run automatically downloads the Food-101 dataset and the ImageNet-pret
 python main.py --mode all --epochs 10 --batch-size 32
 ```
 
-Only the new classification layer is trained, so this setup typically requires far fewer epochs than training a CNN from scratch.
-
+The convolutional feature extractor is frozen, while the entire classification head is trained.
 ## Evaluation and Grad-CAM
 
 ```bash

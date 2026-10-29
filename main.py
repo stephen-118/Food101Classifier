@@ -12,7 +12,7 @@ from visualize import plot_confusion_matrix, plot_history, save_gradcam_examples
 
 
 def parse_args():
-    # 命令行参数
+    # Define command-line arguments.
     parser = argparse.ArgumentParser(description="Food-101 transfer learning with MobileNetV3-Small")
     parser.add_argument("--mode", choices=["train", "evaluate", "gradcam", "all"], default="all")
     parser.add_argument("--data-dir", default="data")
@@ -34,7 +34,7 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = output_dir / "best_mobilenetv3_food101.pth"
-    # 有 NVIDIA GPU 和 CUDA 就使用 GPU，否则使用 CPU
+    # Use the GPU if CUDA is available; otherwise, use the CPU.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
@@ -46,15 +46,15 @@ def main():
           f"validation={len(val_loader.dataset)}, test={len(test_loader.dataset)}")
 
     use_pretrained = args.mode in ("train", "all")
-    # 创建模型
+    # Create the model.
     model = FoodTransferModel(num_classes=len(classes),
                               use_pretrained=use_pretrained).to(device)
-    # 损失函数
+    # Define the loss function.
     criterion = nn.CrossEntropyLoss()
 
-    # 训练
+    # Train the model.
     if args.mode in ("train", "all"):
-        # 只把可训练参数交给优化器
+        # Pass only trainable parameters to the optimizer.
         trainable_parameters = filter(
             lambda parameter: parameter.requires_grad,
             model.parameters()
@@ -70,7 +70,7 @@ def main():
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint}. Train first.")
         model.load_state_dict(torch.load(checkpoint, map_location=device))
 
-    # 评估
+    # Evaluate the model on the test set.
     if args.mode in ("evaluate", "all"):
         test_loss, top1, top5, confusion = evaluate(
             model, test_loader, criterion, device, len(classes)
@@ -83,7 +83,7 @@ def main():
             json.dump({"test_loss": test_loss, "top1_accuracy": top1,
                        "top5_accuracy": top5}, file, indent=2)
 
-    # 绘图
+    # Generate Grad-CAM visualizations.
     if args.mode in ("gradcam", "all"):
         save_gradcam_examples(model, test_loader, classes, device,
                               output_dir, args.gradcam_count)
