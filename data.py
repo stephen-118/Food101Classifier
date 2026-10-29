@@ -1,3 +1,6 @@
+import random
+
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
 from torchvision import transforms
@@ -33,8 +36,15 @@ def _limited_indices(length, maximum, seed):
     # Shuffle the indices and select the first maximum entries.
     return torch.randperm(length, generator=generator)[:maximum].tolist()
 
+def seed_worker(worker_id):
+    # DataLoader seeds torch in each worker; seed the other RNGs from that value.
+    worker_seed = torch.initial_seed() % (2 ** 32)
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
+
+
 # Download the dataset and create training, validation, and test splits.
-def create_loaders(data_dir, batch_size, workers=0, max_train=None, max_test=None):
+def create_loaders(data_dir, batch_size, workers=0, max_train=None, max_test=None, seed=37):
     """Split official training data 90/10; reserve official test data for final reporting.
 
     max_train limits the pool BEFORE splitting it into train/validation subsets.
@@ -59,10 +69,12 @@ def create_loaders(data_dir, batch_size, workers=0, max_train=None, max_test=Non
     # Randomly limit the test split to the requested number of images.
     test_set = Subset(test_data, _limited_indices(len(test_data), max_test, seed=SPLIT_SEED))
     # Share DataLoader options to avoid repeating the same arguments.
-    options = dict(batch_size=batch_size, num_workers=workers, pin_memory=torch.cuda.is_available())
-    return (DataLoader(train_set, shuffle=True, **options),
-            DataLoader(val_set, shuffle=False, **options),
-            DataLoader(test_set, shuffle=False, **options),
+    options = dict(batch_size=batch_size, num_workers=workers, pin_memory=torch.cuda.is_available(),
+                   worker_init_fn=seed_worker)
+    # Separate loader RNGs keep shuffle/worker seeds independent of model initialization.
+    return (DataLoader(train_set, shuffle=True, generator=torch.Generator().manual_seed(seed), **options),
+            DataLoader(val_set, shuffle=False, generator=torch.Generator().manual_seed(seed + 1), **options),
+            DataLoader(test_set, shuffle=False, generator=torch.Generator().manual_seed(seed + 2), **options),
             train_augmented.classes) # Class names are ordered by their numeric labels.
 
 # Undo normalization for display with matplotlib.

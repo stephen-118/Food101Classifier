@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -93,7 +94,10 @@ class TrainingStrategyTests(unittest.TestCase):
                     self.assertEqual(actual, expected)
                     backbone = {id(p) for p in model.network.features.parameters()}
                     self.assertEqual(bool(actual & backbone), strategy == "full")
-                    return {"train_loss": [1.0], "val_loss": [1.0], "val_accuracy": [0.5]}
+                    return {"train_loss": [1.0], "val_loss": [1.0], "val_accuracy": [0.5],
+                            "best_epoch": 1, "best_val_accuracy": 0.5,
+                            "total_train_seconds": 2.0, "total_val_seconds": 1.0,
+                            "peak_train_allocated_mib": None}
 
                 argv = ["main.py", "--mode", "train", "--strategy", strategy,
                         "--output-dir", folder, "--epochs", "1"]
@@ -108,6 +112,17 @@ class TrainingStrategyTests(unittest.TestCase):
                 factory.assert_called_once_with(num_classes=5, use_pretrained=True,
                                                 freeze_backbone=strategy == "frozen")
                 train.assert_called_once()
+                config = json.loads((Path(folder) / "run_config.json").read_text(encoding="utf-8"))
+                self.assertEqual(config["status"], "completed")
+                self.assertEqual(config["seed"], 37)
+                self.assertEqual(config["best_epoch"], 1)
+                self.assertEqual(config["total_parameters"], sum(p.numel() for p in model.parameters()))
+                self.assertEqual(config["trainable_parameters"],
+                                 sum(p.numel() for p in model.parameters() if p.requires_grad))
+                self.assertIsNone(config["training"]["peak_train_allocated_mib"])
+                self.assertIn("pytorch", config["environment"])
+                self.assertIn("torchvision", config["environment"])
+                self.assertTrue(config["pretrained_weights"]["loaded_for_this_run"])
 
 
 if __name__ == "__main__":

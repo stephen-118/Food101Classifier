@@ -42,20 +42,94 @@ For comparison experiments, keep the data split and other settings the same
 and use separate output directories for each strategy:
 
 ```bash
-python main.py --mode all --strategy frozen --epochs 10 --batch-size 32 --output-dir outputs/frozen
-python main.py --mode all --strategy full --epochs 10 --batch-size 32 --output-dir outputs/full
+python main.py --mode all --strategy frozen --seed 37 --epochs 10 --batch-size 32 --learning-rate 0.001 --output-dir outputs/frozen_seed37
+python main.py --mode all --strategy full --seed 37 --epochs 10 --batch-size 32 --learning-rate 0.001 --output-dir outputs/full_seed37
 ```
 
 Each directory stores its own best validation checkpoint and test results. To
 evaluate a saved model, select the corresponding directory:
 
 ```bash
-python main.py --mode evaluate --strategy full --output-dir outputs/full
+python main.py --mode evaluate --strategy full --output-dir outputs/full_seed37
 ```
 
 The selected strategy is recorded in `metrics.json` under `args.strategy` for
 the current invocation. For an existing checkpoint, this argument does not
 establish which strategy was used in its original training run.
+
+## Time, Memory, and Experiment Records
+
+Both strategies use the same measurement scope. `history.json` preserves the
+loss/accuracy curves and adds:
+
+| Field | Meaning |
+| --- | --- |
+| `train_seconds` | Per-epoch training batch-loop wall time in seconds |
+| `val_seconds` | Per-epoch validation wall time, recorded separately |
+| `total_train_seconds` | Sum of all epoch training times; excludes validation |
+| `total_val_seconds` | Sum of all epoch validation times |
+| `train_peak_allocated_mib` | Per-epoch peak PyTorch tensor memory allocated on the selected GPU, in MiB |
+| `peak_train_allocated_mib` | Maximum of the per-epoch training peaks |
+| `best_epoch` | One-based epoch saved as the best validation Top-1 checkpoint; ties keep the earlier epoch |
+| `best_val_accuracy` | Validation Top-1 accuracy at that epoch |
+
+Training time uses `time.perf_counter()` around the batch loop, including data
+loading, device transfers, forward/backward passes, and optimizer steps.
+CUDA is synchronized before and after timing. Model setup, checkpoint I/O,
+plots, final test evaluation, and Grad-CAM are excluded. The sum covers the
+requested epoch count (10 by default), rather than total process runtime.
+
+At each epoch, CUDA peak statistics are reset before the training batch loop.
+The peak is read with `torch.cuda.max_memory_allocated()` immediately after
+training, before validation. Values are divided by `1024 ** 2`. This measures
+**peak allocated PyTorch tensor memory**, including resident model, gradient,
+and optimizer tensors. It is not reserved allocator memory or total GPU usage
+from `nvidia-smi`. CPU runs record memory values as JSON `null`.
+
+Every invocation saves `run_config.json`, including the full command argument
+list, parsed arguments, strategy, training seed, fixed split seed, data sources
+and sample counts, transforms, resolved pretrained weight version/URL,
+PyTorch/torchvision versions, GPU model, FP32 precision settings, total and
+trainable parameter counts, checkpoint path, and run status. Training runs add
+the best epoch and aggregate time/memory measurements **before** test evaluation
+or Grad-CAM. The optimizer defaults are also recorded. Existing run configurations
+are backed up as `run_config.backup-<UTC timestamp>.json` before a new invocation.
+Evaluation/Grad-CAM-only runs leave training measurements and best epoch unset;
+they cannot infer an old checkpoint's original training configuration.
+
+`--seed` defaults to 37 and seeds Python, NumPy, PyTorch, and loader shuffling.
+Workers seed Python/NumPy from their PyTorch worker seed. The split seed remains
+37 when the training seed changes. Both strategies use FP32 without AMP or TF32;
+exact bitwise reproducibility across different hardware/software is not implied.
+
+## Sequential Comparison Experiments
+
+To run the two complete 10-epoch experiments sequentially using the same Python
+environment, data split, seed, initialization, augmentation, batch size,
+optimizer, learning rate, precision, and visible GPU:
+
+```powershell
+python compare_strategies.py
+```
+
+This runs `--mode all` first with `frozen`, then with `full`, each in a separate
+process. Results and terminal logs are saved to `outputs/frozen_seed37/` and
+`outputs/full_seed37/`. After both succeed, `outputs/comparison_seed37.json` and
+`outputs/comparison_seed37.csv` compare accuracy, training/validation times,
+peak allocated PyTorch tensor memory, best epoch, and parameter counts. A failed
+experiment stops the sequence. No sample limits are applied by default.
+
+For a short workflow check only:
+
+```powershell
+python compare_strategies.py --epochs 1 --batch-size 4 --max-train-samples 20 --max-test-samples 10 --output-dir outputs/measurement_smoke
+```
+
+This comparison answers how the strategies differ under the **same settings and
+10-epoch training budget**; it does not establish each strategy's best result
+after separate hyperparameter tuning. Optional repeats with `--seed 38` and
+`--seed 39` produce separate directories/summaries while retaining the same data
+split. Use the same program version and environment for both strategies.
 
 ## Training, Validation, and Test Data
 
@@ -118,3 +192,10 @@ were used; re-evaluate the checkpoint to obtain a traceable result.
 - `engine.py`: Contains the training and evaluation logic.
 - `visualize.py`: Generates charts and Grad-CAM visualizations.
 - `main.py`: Provides the main command-line entry point.
+- `compare_strategies.py`: Runs sequential comparison experiments and exports a summary.
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -v
+```

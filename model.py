@@ -1,6 +1,8 @@
 import torch.nn as nn
 from torchvision.models import MobileNet_V3_Small_Weights, mobilenet_v3_small
 
+PRETRAINED_WEIGHTS = MobileNet_V3_Small_Weights.DEFAULT
+
 # MobileNetV3-Small transfer-learning model for Food-101
 class FoodTransferModel(nn.Module):
 
@@ -9,7 +11,7 @@ class FoodTransferModel(nn.Module):
         self.freeze_backbone = freeze_backbone
         # Load MobileNet with pretrained visual features.
         if use_pretrained:
-            weights = MobileNet_V3_Small_Weights.DEFAULT
+            weights = PRETRAINED_WEIGHTS
         else:
             weights = None
         self.network = mobilenet_v3_small(weights=weights)

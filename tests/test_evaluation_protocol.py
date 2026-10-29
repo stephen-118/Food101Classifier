@@ -97,6 +97,7 @@ class EvaluationProtocolTests(unittest.TestCase):
             for count in (3, 5):
                 loader = DataLoader(Subset(dataset, list(range(count))), batch_size=2)
                 args = argparse.Namespace(mode="evaluate", data_dir="unused", output_dir=folder,
+                                          seed=37,
                                           strategy="frozen" if count == 3 else "full",
                                           epochs=10, batch_size=2, learning_rate=0.001,
                                           workers=0, max_train_samples=None,
