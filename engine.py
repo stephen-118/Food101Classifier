@@ -2,6 +2,7 @@ import torch
 
 # Evaluate the model.
 def evaluate(model, loader, criterion, device, num_classes=101):
+    """Compute metrics for the supplied validation or test loader without updating weights."""
     model.eval()
     total_loss = correct1 = correct5 = total = 0
     # Create a confusion matrix: rows are true classes, columns are predicted classes.
@@ -24,10 +25,16 @@ def evaluate(model, loader, criterion, device, num_classes=101):
             # Update the confusion matrix after moving labels and predictions to CPU.
             for true_label, predicted_label in zip(labels.cpu(), top5[:, 0].cpu()):
                 confusion[true_label, predicted_label] += 1
+    if total == 0:
+        raise ValueError("Evaluation requires at least one image.")
     return total_loss / total, correct1 / total, correct5 / total, confusion
 
 # Run the training loop.
 def train_model(model, train_loader, val_loader, criterion, optimizer, device, epochs, checkpoint_path):
+    """Update weights on train data and select the checkpoint by validation Top-1 only.
+
+    The official test loader is deliberately not part of the training interface.
+    """
     # Track the training history.
     history = {"train_loss": [], "val_loss": [], "val_accuracy": []}
     best_accuracy = -1.0
@@ -57,7 +64,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, device, e
         history["val_accuracy"].append(val_accuracy)
         print(f"Epoch {epoch + 1}/{epochs}: train_loss={train_loss:.4f}, "
               f"val_loss={val_loss:.4f}, val_accuracy={val_accuracy:.2%}")
-        # Save the model with the best validation accuracy.
+        # Select checkpoints using validation Top-1, never official test scores.
         if val_accuracy > best_accuracy:
             best_accuracy = val_accuracy
             torch.save(model.state_dict(), checkpoint_path)

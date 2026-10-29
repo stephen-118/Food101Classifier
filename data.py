@@ -7,6 +7,8 @@ from torchvision.datasets import Food101
 IMAGE_SIZE = 224
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
+SPLIT_SEED = 37
+VALIDATION_FRACTION = 0.1
 
 # Apply data augmentation to training images.
 def build_transforms(training):
@@ -21,6 +23,8 @@ def build_transforms(training):
 
 # Randomly select up to the requested number of sample indices.
 def _limited_indices(length, maximum, seed):
+    if maximum is not None and maximum <= 0:
+        raise ValueError("Sample limits must be positive.")
     # Use all samples if no limit is set or the limit covers the entire dataset.
     if maximum is None or maximum >= length:
         return list(range(length))
@@ -31,24 +35,29 @@ def _limited_indices(length, maximum, seed):
 
 # Download the dataset and create training, validation, and test splits.
 def create_loaders(data_dir, batch_size, workers=0, max_train=None, max_test=None):
+    """Split official training data 90/10; reserve official test data for final reporting.
+
+    max_train limits the pool BEFORE splitting it into train/validation subsets.
+    Validation Top-1 selects the checkpoint; test scores never select checkpoints.
+    """
     # Use augmented images for training.
     train_augmented = Food101(data_dir, split="train", download=True, transform=build_transforms(True))
     # Use images without augmentation for validation.
     train_plain = Food101(data_dir, split="train", download=False, transform=build_transforms(False))
     # Load the official test split.
     test_data = Food101(data_dir, split="test", download=True, transform=build_transforms(False))
-    indices = _limited_indices(len(train_augmented), max_train, seed=37)
+    indices = _limited_indices(len(train_augmented), max_train, seed=SPLIT_SEED)
     if len(indices) < 2:
         raise ValueError("Training requires at least 2 images.")
     # Shuffle the indices using a fixed random seed.
-    generator = torch.Generator().manual_seed(37)
+    generator = torch.Generator().manual_seed(SPLIT_SEED)
     shuffled = torch.tensor(indices)[torch.randperm(len(indices), generator=generator)].tolist()
     # Reserve 10% of the selected samples for validation and use the rest for training.
-    val_size = max(1, int(len(shuffled) * 0.1))
+    val_size = max(1, int(len(shuffled) * VALIDATION_FRACTION))
     train_set = Subset(train_augmented, shuffled[val_size:])
     val_set = Subset(train_plain, shuffled[:val_size])
     # Randomly limit the test split to the requested number of images.
-    test_set = Subset(test_data, _limited_indices(len(test_data), max_test, seed=37))
+    test_set = Subset(test_data, _limited_indices(len(test_data), max_test, seed=SPLIT_SEED))
     # Share DataLoader options to avoid repeating the same arguments.
     options = dict(batch_size=batch_size, num_workers=workers, pin_memory=torch.cuda.is_available())
     return (DataLoader(train_set, shuffle=True, **options),
